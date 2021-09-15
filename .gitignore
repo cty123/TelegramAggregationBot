@@ -4,3 +4,4 @@ venv
 .db
 .config.ini
 *.session
+.idea

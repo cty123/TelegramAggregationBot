@@ -1,10 +1,11 @@
-import logging 
-from pyrogram.types import InputMediaPhoto
+import logging
+from pyrogram.types import InputMediaPhoto, InputMediaVideo
 
 from tgbot.service.session_service import SessionService
 
-START_CMD = "/start"
+PREVIEW_CMD = "/preview"
 END_CMD = "/end"
+
 
 class TGBotHandler:
 
@@ -12,9 +13,9 @@ class TGBotHandler:
         self.session_service = SessionService()
 
     def handle(self, client, message):
-
         # Check if the message is a command, currently there are only following commands,
-        # * /start - Start a new session to aggregate images and text
+        # * Any message, text or photo - Start a new session for aggregation and accept the incoming content
+        # * /preview - Dump the current session without closing the existing session
         # * /end - End an existing session to aggregate images and text, will return the aggregation result
 
         message_text = str(message.text)
@@ -22,52 +23,59 @@ class TGBotHandler:
 
         logging.info(f"Received message text: {message_text} from user: {user_id}")
 
-        if message_text == START_CMD:
-            return self.start_handler(user_id, message)
-        
+        # Close the existing session and dump the session content
         if message_text == END_CMD:
             return self.end_handler(user_id, message)
+
+        if message_text == PREVIEW_CMD:
+            return self.preview_handler(user_id, message)
 
         # Get the session id of the user, create a new one if it doesn't exists.
         return self.message_handler(user_id, message)
 
-
-    def start_handler(self, user_id, message) -> None:
-        logging.info(f"Received start command from user: {user_id}, creating new session")
-        
-        # Create new session
-        session_id = self.session_service.create_new_session(user_id)
-        message.reply_text(f"Created new session {session_id}")
-
-
     def message_handler(self, user_id, message) -> None:
-        text = message.text if message.text is not None else message.caption
-        photo_id = message.photo.file_id if message.photo is not None else None 
+        # Retrieve the current user session first
+        session = self.session_service.retrieve_session_for_user(user_id)
 
-        session = self.session_service.get_or_create_session(user_id)
+        # Extract text, photo and video
+        text = message.text if message.text is not None else message.caption
+        photo_id = message.photo.file_id if message.photo is not None else None
+        video_id = message.video.file_id if message.video is not None else None
 
         if text is not None:
-            session.text = text
-            session.save()
+            self.session_service.update_text(session.session_id, text)
             message.reply_text(f"Update text [\"{text}]\"")
 
         if photo_id is not None:
-            self.session_service.append_photo_to_session(user_id, photo_id)
+            self.session_service.append_photo(session.session_id, photo_id)
             message.reply_text(f"Update photo file id [\"{photo_id}]\"")
 
+        if video_id is not None:
+            self.session_service.append_video(session.session_id, video_id)
+            message.reply_text(f"Update video file id [\"{video_id}]\"")
+
     def end_handler(self, user_id, message):
-        session = self.session_service.retrieve_session(user_id)
-        
-        if session is None:
-            message.reply_text(f"No existing session exists for user {user_id}, enter /start to start a new session")
-            return
+        try:
+            self.preview_handler(user_id, message)
+        finally:
+            self.session_service.create_new_session_for_user(user_id)
+            message.reply_text("Current session terminated")
+            logging.info(f"Session ended for {user_id}")
 
-        media_files = list(map(lambda p: InputMediaPhoto(p), session.photo))
+    def preview_handler(self, user_id, message):
+        session = self.session_service.retrieve_session_for_user(user_id)
+
+        photo_files = list(map(lambda p: InputMediaPhoto(p), session.photo))
+        video_files = list(map(lambda p: InputMediaVideo(p), session.video))
+        media_files = photo_files + video_files
+
+        if len(media_files) > 10:
+            message.reply_text("Session contains more than 10 media files, will only aggregate the first 10.")
+            media_files = media_files[:10]
+
         if len(media_files) == 0:
-            return message.reply_text(session.text)
-
-        first_media = media_files[0]
-        first_media.caption = session.text
-
-        return message.reply_media_group(media=media_files)
- 
+            message.reply_text(session.text)
+        else:
+            first_media = media_files[0]
+            first_media.caption = session.text
+            message.reply_media_group(media=media_files)
