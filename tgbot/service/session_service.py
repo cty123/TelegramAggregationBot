@@ -49,6 +49,11 @@ class SessionService:
     def update_text(self, session_id, text):
         Session.objects(session_id=session_id).update_one(text=text)
 
+    def concat_text(self, session_id, text):
+        session = Session.objects(session_id=session_id).first()
+        existing_text = session.text if session.text else ''
+        Session.objects(session_id=session_id).update_one(text=existing_text + '\n' + text)
+
     def append_photo(self, session_id, photo_id):
         Session.objects(session_id=session_id).update_one(push__photo=photo_id)
 

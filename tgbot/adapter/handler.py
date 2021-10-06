@@ -43,7 +43,7 @@ class TGBotHandler:
         video_id = message.video.file_id if message.video is not None else None
 
         if text is not None:
-            self.session_service.update_text(session.session_id, text)
+            self.session_service.concat_text(session.session_id, text)
             message.reply_text(f"Update text [\"{text}]\"")
 
         if photo_id is not None:
