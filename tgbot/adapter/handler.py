@@ -43,8 +43,8 @@ class TGBotHandler:
         video_id = message.video.file_id if message.video is not None else None
 
         if text is not None:
-            self.session_service.concat_text(session.session_id, text)
-            message.reply_text(f"Update text [\"{text}]\"")
+            self.session_service.add_paragraph(session.session_id, text)
+            message.reply_text(f"Added paragraph [\"{text}]\"")
 
         if photo_id is not None:
             self.session_service.append_photo(session.session_id, photo_id)
@@ -69,13 +69,20 @@ class TGBotHandler:
         video_files = list(map(lambda p: InputMediaVideo(p), session.video))
         media_files = photo_files + video_files
 
+        text = ""
+        for i, p in enumerate(session.paragraphs):
+            text += f"{i + 1}. {p.rstrip()}\n"
+
         if len(media_files) > 10:
             message.reply_text("Session contains more than 10 media files, will only aggregate the first 10.")
             media_files = media_files[:10]
 
         if len(media_files) == 0:
-            message.reply_text(session.text)
+            if len(text) == 0:
+                text = "Empty"
+
+            message.reply_text(text)
         else:
             first_media = media_files[0]
-            first_media.caption = session.text
+            first_media.caption = text
             message.reply_media_group(media=media_files)
